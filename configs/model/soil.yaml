@@ -1,4 +1,4 @@
-_target_: src.models.mnist_module.MNISTLitModule
+_target_: src.models.soil_module.SoilLitModule
 
 optimizer:
   _target_: torch.optim.Adam
@@ -15,11 +15,11 @@ scheduler:
 
 net:
   _target_: src.models.components.simple_dense_net.SimpleDenseNet
-  input_size: 784
-  lin1_size: 64
+  input_size: 15
+  lin1_size: 256
   lin2_size: 128
   lin3_size: 64
-  output_size: 10
+  output_size: 1
 
 # compile model for faster training with pytorch 2.0
 compile: false

@@ -7,11 +7,11 @@ class SimpleDenseNet(nn.Module):
 
     def __init__(
         self,
-        input_size: int = 784,
-        lin1_size: int = 256,
-        lin2_size: int = 256,
-        lin3_size: int = 256,
-        output_size: int = 10,
+        input_size: int = 15,
+        lin1_size: int = 32,
+        lin2_size: int = 16,
+        lin3_size: int = 8,
+        output_size: int = 1,
     ) -> None:
         """Initialize a `SimpleDenseNet` module.
 
@@ -42,12 +42,10 @@ class SimpleDenseNet(nn.Module):
         :param x: The input tensor.
         :return: A tensor of predictions.
         """
-        batch_size, channels, width, height = x.size()
-
-        # (batch, 1, width, height) -> (batch, 1*width*height)
-        x = x.view(batch_size, -1)
-
-        return self.model(x)
+        # reshape predictions (batch_size, 1) --> (batch_size)
+        batch_size, input_size = x.size()
+        pred = self.model(x)
+        return pred.reshape(batch_size)
 
 
 if __name__ == "__main__":

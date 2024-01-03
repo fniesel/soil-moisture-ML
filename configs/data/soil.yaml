@@ -1,0 +1,10 @@
+_target_: src.data.soil_datamodule.SoilDataModule
+data_dir: ${paths.data_dir}
+batch_size: 512 # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
+val_period: ['2013-10-03', '2014-07-03']
+test_period: ['2012-10-03', '2013-07-03']
+days_before: 3
+days_after: 3
+neighborhood: True
+num_workers: 1
+pin_memory: True # sagt Jan
