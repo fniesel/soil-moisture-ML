@@ -5,6 +5,8 @@ from lightning import LightningDataModule
 from torch.utils.data import ConcatDataset, DataLoader, Dataset, random_split
 from torchvision.transforms import transforms
 import pandas as pd
+import xarray as xr
+import numpy as np
 
 
 class SoilDataModule(LightningDataModule):
@@ -16,12 +18,14 @@ class SoilDataModule(LightningDataModule):
 
     def __init__(
         self,
-        data_dir: str = "data/",
+        data_dir: str = "/p/scratch/share/sivaprasad1/niesel1/",
+        train_period: Tuple[str, str] = ('2014-07-04', '2022-12-31'),
         val_period: Tuple[str, str] = ('2013-10-03', '2014-07-03'),
         test_period: Tuple[str, str] = ('2012-10-03', '2013-07-03'),
         days_before: int = 3,
         days_after: int = 3,
-        neighborhood: bool = True,
+        min_clip_value: float = 0,
+        max_clip_value: float = 0.95,
         batch_size: int = 64,
         num_workers: int = 0,
         pin_memory: bool = False,
@@ -74,86 +78,95 @@ class SoilDataModule(LightningDataModule):
 
         # load and split datasets only if not loaded already
         if not self.data_train and not self.data_val and not self.data_test:
-            # # load data
-            # combined_dataset = pd.read_csv(self.hparams.data_dir + 'combined_dataset.csv')
-
-            # # drop all cells that have below 1000 amsr and ascat observations
-            # cells = combined_dataset.groupby(["latitude", "longitude"]).count()
-            # cells = cells[cells["amsr"].values >= 1000]
-            # cells = cells[cells["ascat"].values >= 1000]
-            # cells = cells.reset_index()
-            # filtered_dataset = combined_dataset.merge(cells[["latitude", "longitude"]], on=["latitude", "longitude"], how="inner")
-
-            # # interpolate ascat_smoothed
-            # interpolated_dataset = filtered_dataset.copy()
-            # interpolated_dataset["ascat_smoothed"] = interpolated_dataset.groupby(["latitude", "longitude"])["ascat_smoothed"].apply(lambda x: x.interpolate(method='linear', limit_direction='both'))
-         
-            # # only keep relevant columns 
-            # df = interpolated_dataset[["latitude", "longitude", "time", "year", "dayofyear", "amsr_smoothed", "ascat_smoothed"]]
             
-            df = pd.read_csv(self.hparams.data_dir + 'filtered_interpolated_dataset.csv')
-            # only keep relevant columns 
-            df = df[["latitude", "longitude", "time", "year", "dayofyear", "amsr_smoothed", "ascat_smoothed"]]
+            # load data
+            amsr = xr.open_dataset(f"{self.hparams.data_dir}/AMSR_cp_smooth_final_sg7_3.nc")
+            smos = xr.open_dataset(f"{self.hparams.data_dir}/SMOS_cp_smooth_final.nc")
+            ascat = xr.open_dataset(f"{self.hparams.data_dir}/ASCAT_cp_smooth.nc")   
 
-            # include new features --> days before and after
-            df.sort_values(by=['latitude', 'longitude', 'time'], inplace=True)
-            for i in range(self.hparams.days_before):
-                df[f"{-(i+1)}"] = df['ascat_smoothed'].shift(i+1)
-            for i in range(self.hparams.days_after):
-                df[f"{i+1}"] = df['ascat_smoothed'].shift(-(i+1))
-            # drop the first and last days of each time series (would contain NaN values)
-            df = df[~df.time.isin(df.groupby(['latitude', 'longitude']).head(self.hparams.days_before).time.unique())]
-            df = df[~df.time.isin(df.groupby(['latitude', 'longitude']).tail(self.hparams.days_after).time.unique())]
+            # convert amsr to volumetric soil moisture
+            amsr = amsr['AMSR_fill_smooth']/100
 
-            # add helper columns that specify the neighborhood coordinates
-            if self.hparams.neighborhood:
-                df['top_lat'] = df['latitude'] + 0.25
-                df['bottom_lat'] = df['latitude'] - 0.25
-                df['left_lon'] = df['longitude'] - 0.25
-                df['right_lon'] = df['longitude'] + 0.25
+            # clip values to min and max soil moisture values (occurs due to smoothing)
+            amsr = amsr.clip(min=self.hparams.min_clip_value, max=self.hparams.max_clip_value)
+            smos = smos.clip(min=self.hparams.min_clip_value, max=self.hparams.max_clip_value)
+            ascat = ascat.clip(min=self.hparams.min_clip_value, max=self.hparams.max_clip_value)
 
-                # merge the df with itself to get the neighboring ascat values
-                df_helper = df[['time', 'latitude', 'longitude', 'ascat_smoothed']]
-                df_helper.columns = ['time', 'top_lat', 'longitude', 'ascat_smoothed_top']
-                df = pd.merge(df, df_helper, on=['time', 'top_lat', 'longitude'], how='left')
-                df_helper.columns = ['time', 'bottom_lat', 'longitude', 'ascat_smoothed_bottom']
-                df = pd.merge(df, df_helper, on=['time', 'bottom_lat', 'longitude'], how='left')
-                df_helper.columns = ['time', 'latitude', 'left_lon', 'ascat_smoothed_left']
-                df = pd.merge(df, df_helper, on=['time', 'latitude', 'left_lon'], how='left')
-                df_helper.columns = ['time', 'latitude', 'right_lon', 'ascat_smoothed_right']
-                df = pd.merge(df, df_helper, on=['time', 'latitude', 'right_lon'], how='left')
+            # convert time to same format in each dataset
+            amsr['time'] = pd.to_datetime(amsr['time'].values)
+            ascat['time'] = pd.to_datetime(ascat['time'].values)
+            smos['time'] = pd.to_datetime(smos['time'].values)
 
-                # drop helper columns
-                df.drop(columns=['top_lat', 'bottom_lat', 'left_lon', 'right_lon'], inplace=True)
+            # filter for time period
+            amsr = amsr.sel(time=slice(self.hparams.test_period[0], self.hparams.train_period[1]))
+            smos = smos.sel(time=slice(self.hparams.test_period[0], self.hparams.train_period[1]))
+            ascat = ascat.sel(time=slice(self.hparams.test_period[0], self.hparams.train_period[1]))
 
-                # drop cells that have NaN values (cells at the border of the dataset)
-                df = df.dropna(subset=['ascat_smoothed_top', 'ascat_smoothed_bottom', 'ascat_smoothed_left', 'ascat_smoothed_right'])
+            # rename to Latitude and Longitude
+            ascat = ascat.rename({'latitude': 'Latitude', 'longitude':'Longitude'})
 
-            # drop rows with missing amsr or ascat values
-            df = df.dropna(subset=['amsr_smoothed'])
+            # fill missing values with 1 (sea cells)
+            amsr = amsr.fillna(1)
+            smos = smos['SMOS_fill_smoothed'].fillna(1)
+            ascat = ascat['ASCAT_fill_smooth'].fillna(1)
 
-            # set time as index
-            df.set_index('time', inplace=True)
+            # convert to numpy
+            amsr_np = amsr.values
+            smos_np = smos.values
+            ascat_np = ascat.values
 
-            # split data
-            val = df[(df.index >= self.hparams.val_period[0]) & (df.index <= self.hparams.val_period[1])]
-            test = df[(df.index >= self.hparams.test_period[0]) & (df.index <= self.hparams.test_period[1])]
-            train = df[(df.index < self.hparams.test_period[0]) | (df.index > self.hparams.val_period[1])]
+            # optional: normalize data
 
-            features_train = torch.from_numpy(train.drop(columns='amsr_smoothed').values).float()
-            features_val = torch.from_numpy(val.drop(columns='amsr_smoothed').values).float()
-            features_test = torch.from_numpy(test.drop(columns='amsr_smoothed').values).float()
+            # optional: add lookback window
+            # X_sequences = []
+            # Y_sequences = []
+            # # create sequences
+            # for i in range(len(ascat_np)):
+            #     # check if there are enough past and future days for each i
+            #     if i - self.hparams.days_before >= 0 and i + self.hparams.days_after < len(ascat_np):
+            #         # create input sequences
+            #         X_seq_1 = ascat_np[i-self.hparams.days_before:i+self.hparams.days_after]
+            #         X_seq_2 = smos_np[i-self.hparams.days_before:i+self.hparams.days_after]
+                    
+            #         X_seq = np.concatenate((np.expand_dims(X_seq_1, axis=-1), np.expand_dims(X_seq_2, axis=-1)), axis=-1)
+            #         X_sequences.append(X_seq)
 
-            # todo: maybe normalize data
-            
-            labels_train = torch.from_numpy(train['amsr_smoothed'].values).float()
-            labels_val = torch.from_numpy(val['amsr_smoothed'].values).float()
-            labels_test = torch.from_numpy(test['amsr_smoothed'].values).float()
+            #         # Create output sequences
+            #         Y_seq = amsr_np[i]
+            #         Y_sequences.append(Y_seq)
+
+            # # convert the lists to NumPy arrays
+            # X = np.array(X_sequences)
+            # Y = np.array(Y_sequences)
+
+            # concatenate ascat and smos by adding a new dimension at the end (until we activate the lookback window)
+            X = np.concatenate((np.expand_dims(ascat_np, axis=-1), np.expand_dims(smos_np, axis=-1)), axis=-1)
+            Y = amsr_np
+
+            # obtain the index positions of the specified periods
+            train_index_pos = np.where(
+                (amsr.time.values >= np.datetime64(self.hparams.train_period[0])) & 
+                (amsr.time.values <= np.datetime64(self.hparams.train_period[1])))[0]
+            val_index_pos = np.where(
+                (amsr.time.values >= np.datetime64(self.hparams.val_period[0])) &
+                (amsr.time.values <= np.datetime64(self.hparams.val_period[1])))[0]
+            test_index_pos = np.where(
+                (amsr.time.values >= np.datetime64(self.hparams.test_period[0])) &
+                (amsr.time.values <= np.datetime64(self.hparams.test_period[1])))[0]
+
+            # split into train, val and test and convert to torch tensors
+            X_train = torch.from_numpy(X[train_index_pos]).float()
+            Y_train = torch.from_numpy(Y[train_index_pos]).float()
+            X_val = torch.from_numpy(X[val_index_pos]).float()
+            Y_val = torch.from_numpy(Y[val_index_pos]).float()
+            X_test = torch.from_numpy(X[test_index_pos]).float()
+            Y_test = torch.from_numpy(Y[test_index_pos]).float()
 
             # create datasets
-            self.data_train = SoilDataset(features_train, labels_train)
-            self.data_val = SoilDataset(features_val, labels_val)
-            self.data_test = SoilDataset(features_test, labels_test)
+            self.data_train = SoilDataset(X_train, Y_train)
+            self.data_val = SoilDataset(X_val, Y_val)
+            self.data_test = SoilDataset(X_test, Y_test)
+
 
     def train_dataloader(self) -> DataLoader[Any]:
         """Create and return the train dataloader.

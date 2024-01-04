@@ -60,6 +60,8 @@ class SoilLitModule(LightningModule):
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         x, y = batch
         preds = self.forward(x)
+        # match dimensions of preds and y
+        preds = preds.squeeze(dim=1)
         loss = self.criterion(preds, y)
         return loss, preds, y
 

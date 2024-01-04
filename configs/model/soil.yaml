@@ -14,12 +14,22 @@ scheduler:
   patience: 10
 
 net:
-  _target_: src.models.components.simple_dense_net.SimpleDenseNet
-  input_size: 15
-  lin1_size: 256
-  lin2_size: 128
-  lin3_size: 64
-  output_size: 1
+  _target_: src.models.components.conv_net.ConvNet
+  in_channels: 2
+  h_in: 70
+  w_in: 140
+  kernel_size1: 5
+  stride1: 1
+  padding1: 2
+  conv_out1: 64   
+  kernel_size2: 3
+  stride2: 1
+  padding2: 1
+  conv_out2: 32
+  kernel_size3: 3
+  stride3: 1
+  padding3: 1
+  conv_out3: 1
 
 # compile model for faster training with pytorch 2.0
 compile: false

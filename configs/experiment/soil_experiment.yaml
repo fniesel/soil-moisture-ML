@@ -12,13 +12,13 @@ defaults:
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["soil_moisture", "simple_dense_net"]
+tags: ["soil_moisture", "conv_net"]
 
 seed: 12345
 
 trainer:
   min_epochs: 10
-  max_epochs: 100
+  max_epochs: 1000
   gradient_clip_val: 0.5
 
 model:

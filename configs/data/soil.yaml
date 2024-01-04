@@ -1,10 +1,12 @@
 _target_: src.data.soil_datamodule.SoilDataModule
-data_dir: ${paths.data_dir}
-batch_size: 512 # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
+data_dir: "/p/scratch/share/sivaprasad1/niesel1/"
+batch_size: 32 # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
+train_period: ['2014-07-04', '2022-12-31']
 val_period: ['2013-10-03', '2014-07-03']
 test_period: ['2012-10-03', '2013-07-03']
 days_before: 3
 days_after: 3
-neighborhood: True
+min_clip_value: 0
+max_clip_value: 0.95
 num_workers: 1
-pin_memory: True # sagt Jan
+pin_memory: True
