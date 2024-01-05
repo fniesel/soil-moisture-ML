@@ -12,18 +12,22 @@ class ConvNet(nn.Module):
         kernel_size1: int = 5,
         stride1: int = 1,
         padding1: int = 2,
-        conv_out1: int = 32,   
+        conv_out1: int = 256,   
 
         kernel_size2: int = 3,
         stride2: int = 1,
         padding2: int = 1,
-        conv_out2: int = 32,
-
+        conv_out2: int = 128,
 
         kernel_size3: int = 3,
         stride3: int = 1,
         padding3: int = 1,
-        conv_out3: int = 1,
+        conv_out3: int = 64,
+
+        kernel_size4: int = 3,
+        stride4: int = 1,
+        padding4: int = 1,
+        conv_out4: int = 1,
     ):
         super().__init__()
 
@@ -62,6 +66,14 @@ class ConvNet(nn.Module):
                 kernel_size=kernel_size3,
                 stride=stride3,
                 padding=padding3,
+            ),
+            nn.ReLU(),
+            nn.Conv2d(
+                conv_out3,
+                conv_out4,
+                kernel_size=kernel_size4,
+                stride=stride4,
+                padding=padding4,
             )
         )
 

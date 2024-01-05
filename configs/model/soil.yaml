@@ -21,15 +21,19 @@ net:
   kernel_size1: 5
   stride1: 1
   padding1: 2
-  conv_out1: 64   
+  conv_out1: 256   
   kernel_size2: 3
   stride2: 1
   padding2: 1
-  conv_out2: 32
+  conv_out2: 128
   kernel_size3: 3
   stride3: 1
   padding3: 1
-  conv_out3: 1
+  conv_out3: 64
+  kernel_size4: 3
+  stride4: 1
+  padding4: 1
+  conv_out4: 1
 
 # compile model for faster training with pytorch 2.0
 compile: false

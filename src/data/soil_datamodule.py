@@ -110,10 +110,20 @@ class SoilDataModule(LightningDataModule):
             smos = smos['SMOS_fill_smoothed'].fillna(1)
             ascat = ascat['ASCAT_fill_smooth'].fillna(1)
 
+            # compute trend given the training data
+            amsr_trend = amsr.sel(time=slice(self.hparams.test_period[0], self.hparams.train_period[1])).groupby('time.dayofyear').mean(dim='time')
+            smos_trend = smos.sel(time=slice(self.hparams.test_period[0], self.hparams.train_period[1])).groupby('time.dayofyear').mean(dim='time')
+            ascat_trend = ascat.sel(time=slice(self.hparams.test_period[0], self.hparams.train_period[1])).groupby('time.dayofyear').mean(dim='time')
+
+            # compute anomaly
+            amsr_anomaly = amsr.groupby('time.dayofyear') - amsr_trend
+            smos_anomaly = smos.groupby('time.dayofyear') - smos_trend
+            ascat_anomaly = ascat.groupby('time.dayofyear') - ascat_trend
+
             # convert to numpy
-            amsr_np = amsr.values
-            smos_np = smos.values
-            ascat_np = ascat.values
+            amsr_np = amsr_anomaly.values
+            smos_np = smos_anomaly.values
+            ascat_np = ascat_anomaly.values
 
             # optional: normalize data
 
