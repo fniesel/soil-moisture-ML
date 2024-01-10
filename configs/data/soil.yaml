@@ -1,9 +1,11 @@
 _target_: src.data.soil_datamodule.SoilDataModule
 data_dir: "/p/scratch/share/sivaprasad1/niesel1/"
 batch_size: 32 # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
-train_period: ['2014-07-04', '2022-12-31']
+train_period: ['2014-07-04', '2022-12-21']
 val_period: ['2013-10-03', '2014-07-03']
 test_period: ['2012-10-03', '2013-07-03']
+features: ['ascat_anomaly'] # , 'ascat'
+target: 'amsr_anomaly'
 days_before: 3
 days_after: 3
 min_clip_value: 0

@@ -1,11 +1,16 @@
 from torch import nn
 import math
+from typing import List
 
 
 class ConvNet(nn.Module):
     def __init__(
         self,
-        in_channels: int = 2,
+
+        data_days_before: int = 0,
+        data_days_after: int = 0,
+        data_features: List[str] = ["ascat", "ascat_anomaly"],
+
         h_in: int = 70,
         w_in: int = 140,
 
@@ -30,22 +35,16 @@ class ConvNet(nn.Module):
         conv_out4: int = 1,
     ):
         super().__init__()
-
-        self.in_channels = in_channels
+        
         self.h_in = h_in
         self.w_in = w_in
 
-        # compute output size of conv2d w.r.t. pytorch documentation
-        h_out1 = math.floor((h_in+2*padding1-kernel_size1)/stride1+1)
-        w_out1 = math.floor((w_in+2*padding1-kernel_size1)/stride1+1)
-        h_out2 = math.floor((h_out1+2*padding2-kernel_size2)/stride2+1)
-        w_out2 = math.floor((w_out1+2*padding2-kernel_size2)/stride2+1) 
-        h_out3 = math.floor((h_out2+2*padding3-kernel_size3)/stride3+1)
-        w_out3 = math.floor((w_out2+2*padding3-kernel_size3)/stride3+1)
+        # compute input channels
+        self.in_channels = len(data_features) * (data_days_before + data_days_after + 1)
 
         self.model = nn.Sequential(
             nn.Conv2d(
-                in_channels,
+                self.in_channels,
                 conv_out1,
                 kernel_size=kernel_size1,
                 stride=stride1,
@@ -78,11 +77,11 @@ class ConvNet(nn.Module):
         )
 
     def forward(self, x):
-        batch_size, height, width, channels = x.size()
+        batch_size, days, height, width, channels = x.size()
 
-        # reshape to (batch_size, channels, height, width)
-        x = x.reshape(batch_size, channels, height, width)
-
+        # reshape to (batch_size, days * channels, height, width)
+        x = x.view(batch_size, days * channels, height, width)
+      
         return self.model(x)
 
 

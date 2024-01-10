@@ -62,6 +62,9 @@ class SoilLitModule(LightningModule):
         preds = self.forward(x)
         # match dimensions of preds and y
         preds = preds.squeeze(dim=1)
+
+        # todo: remove sea cells (where y == 1). Are there also land cells with this value?
+
         loss = self.criterion(preds, y)
         return loss, preds, y
 
@@ -76,6 +79,7 @@ class SoilLitModule(LightningModule):
         self.train_mae(preds, targets)
         self.log("train/loss", self.train_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log("train/mae", self.train_mae, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("train/rmse", torch.sqrt(self.train_loss.compute()), on_step=False, on_epoch=True, prog_bar=True)
 
         # return loss or backpropagation will fail
         return loss
@@ -93,6 +97,7 @@ class SoilLitModule(LightningModule):
         self.val_mae(preds, targets)
         self.log("val/loss", self.val_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log("val/mae", self.val_mae, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val/rmse", torch.sqrt(self.val_loss.compute()), on_step=False, on_epoch=True, prog_bar=True)
 
     def on_validation_epoch_end(self) -> None:
         "Lightning hook that is called when a validation epoch ends."
@@ -111,6 +116,7 @@ class SoilLitModule(LightningModule):
         self.test_mae(preds, targets)
         self.log("test/loss", self.test_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log("test/mae", self.test_mae, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/rmse", torch.sqrt(self.test_loss.compute()), on_step=False, on_epoch=True, prog_bar=True)
 
     def on_test_epoch_end(self) -> None:
         """Lightning hook that is called when a test epoch ends."""

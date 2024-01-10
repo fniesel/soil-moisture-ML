@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, List
 
 import torch
 from lightning import LightningDataModule
@@ -19,9 +19,11 @@ class SoilDataModule(LightningDataModule):
     def __init__(
         self,
         data_dir: str = "/p/scratch/share/sivaprasad1/niesel1/",
-        train_period: Tuple[str, str] = ('2014-07-04', '2022-12-31'),
+        train_period: Tuple[str, str] = ('2014-07-04', '2022-12-21'),
         val_period: Tuple[str, str] = ('2013-10-03', '2014-07-03'),
         test_period: Tuple[str, str] = ('2012-10-03', '2013-07-03'),
+        features: List[str] = ['ascat', 'ascat_anomaly'],
+        target: str = 'amsr_anomaly',
         days_before: int = 3,
         days_after: int = 3,
         min_clip_value: float = 0,
@@ -97,10 +99,16 @@ class SoilDataModule(LightningDataModule):
             ascat['time'] = pd.to_datetime(ascat['time'].values)
             smos['time'] = pd.to_datetime(smos['time'].values)
 
-            # filter for time period
-            amsr = amsr.sel(time=slice(self.hparams.test_period[0], self.hparams.train_period[1]))
-            smos = smos.sel(time=slice(self.hparams.test_period[0], self.hparams.train_period[1]))
-            ascat = ascat.sel(time=slice(self.hparams.test_period[0], self.hparams.train_period[1]))
+            # filter for time period (include the days before and after for context)
+            amsr = amsr.sel(time=slice(
+                np.datetime64(self.hparams.test_period[0])-self.hparams.days_before, 
+                np.datetime64(self.hparams.train_period[1])+self.hparams.days_after))
+            smos = smos.sel(time=slice(
+                np.datetime64(self.hparams.test_period[0])-self.hparams.days_before, 
+                np.datetime64(self.hparams.train_period[1])+self.hparams.days_after))
+            ascat = ascat.sel(time=slice(
+                np.datetime64(self.hparams.test_period[0])-self.hparams.days_before,
+                np.datetime64(self.hparams.train_period[1])+self.hparams.days_after))
 
             # rename to Latitude and Longitude
             ascat = ascat.rename({'latitude': 'Latitude', 'longitude':'Longitude'})
@@ -111,58 +119,51 @@ class SoilDataModule(LightningDataModule):
             ascat = ascat['ASCAT_fill_smooth'].fillna(1)
 
             # compute trend given the training data
-            amsr_trend = amsr.sel(time=slice(self.hparams.test_period[0], self.hparams.train_period[1])).groupby('time.dayofyear').mean(dim='time')
-            smos_trend = smos.sel(time=slice(self.hparams.test_period[0], self.hparams.train_period[1])).groupby('time.dayofyear').mean(dim='time')
-            ascat_trend = ascat.sel(time=slice(self.hparams.test_period[0], self.hparams.train_period[1])).groupby('time.dayofyear').mean(dim='time')
+            amsr_trend = amsr.sel(time=slice(
+                np.datetime64(self.hparams.train_period[0]), 
+                np.datetime64(self.hparams.train_period[1]))).groupby('time.dayofyear').mean(dim='time')
+            smos_trend = smos.sel(time=slice(
+                np.datetime64(self.hparams.train_period[0]), 
+                np.datetime64(self.hparams.train_period[1]))).groupby('time.dayofyear').mean(dim='time')
+            ascat_trend = ascat.sel(time=slice(
+                np.datetime64(self.hparams.train_period[0]), 
+                np.datetime64(self.hparams.train_period[1]))).groupby('time.dayofyear').mean(dim='time')
 
             # compute anomaly
             amsr_anomaly = amsr.groupby('time.dayofyear') - amsr_trend
             smos_anomaly = smos.groupby('time.dayofyear') - smos_trend
             ascat_anomaly = ascat.groupby('time.dayofyear') - ascat_trend
 
-            # convert to numpy
-            amsr_np = amsr_anomaly.values
-            smos_np = smos_anomaly.values
-            ascat_np = ascat_anomaly.values
+            # create Y w.r.t. the target variable
+            if self.hparams.target == 'amsr':
+                Y = amsr.values
+            elif self.hparams.target == 'amsr_anomaly':
+                Y = amsr_anomaly.values
+
+            # create X w.r.t. the feature variables
+            feature_list = []
+            if 'ascat' in self.hparams.features:
+                feature_list.append(np.expand_dims(ascat.values, axis=-1))
+            if 'ascat_anomaly' in self.hparams.features:
+                feature_list.append(np.expand_dims(ascat_anomaly.values, axis=-1))
+            if 'smos' in self.hparams.features:
+                feature_list.append(np.expand_dims(smos.values, axis=-1))
+            if 'smos_anomaly' in self.hparams.features:
+                feature_list.append(np.expand_dims(smos_anomaly.values, axis=-1))
+            X = np.concatenate(feature_list, axis=-1)
 
             # optional: normalize data
 
-            # optional: add lookback window
-            # X_sequences = []
-            # Y_sequences = []
-            # # create sequences
-            # for i in range(len(ascat_np)):
-            #     # check if there are enough past and future days for each i
-            #     if i - self.hparams.days_before >= 0 and i + self.hparams.days_after < len(ascat_np):
-            #         # create input sequences
-            #         X_seq_1 = ascat_np[i-self.hparams.days_before:i+self.hparams.days_after]
-            #         X_seq_2 = smos_np[i-self.hparams.days_before:i+self.hparams.days_after]
-                    
-            #         X_seq = np.concatenate((np.expand_dims(X_seq_1, axis=-1), np.expand_dims(X_seq_2, axis=-1)), axis=-1)
-            #         X_sequences.append(X_seq)
-
-            #         # Create output sequences
-            #         Y_seq = amsr_np[i]
-            #         Y_sequences.append(Y_seq)
-
-            # # convert the lists to NumPy arrays
-            # X = np.array(X_sequences)
-            # Y = np.array(Y_sequences)
-
-            # concatenate ascat and smos by adding a new dimension at the end (until we activate the lookback window)
-            X = np.concatenate((np.expand_dims(ascat_np, axis=-1), np.expand_dims(smos_np, axis=-1)), axis=-1)
-            Y = amsr_np
-
-            # obtain the index positions of the specified periods
+            # obtain the index positions of the specified periods (include the days before and after for context)
             train_index_pos = np.where(
-                (amsr.time.values >= np.datetime64(self.hparams.train_period[0])) & 
-                (amsr.time.values <= np.datetime64(self.hparams.train_period[1])))[0]
+                (amsr.time.values >= np.datetime64(self.hparams.train_period[0])-self.hparams.days_before) & 
+                (amsr.time.values <= np.datetime64(self.hparams.train_period[1])+self.hparams.days_after))[0]
             val_index_pos = np.where(
-                (amsr.time.values >= np.datetime64(self.hparams.val_period[0])) &
-                (amsr.time.values <= np.datetime64(self.hparams.val_period[1])))[0]
+                (amsr.time.values >= np.datetime64(self.hparams.val_period[0])-self.hparams.days_before) &
+                (amsr.time.values <= np.datetime64(self.hparams.val_period[1])+self.hparams.days_after))[0]
             test_index_pos = np.where(
-                (amsr.time.values >= np.datetime64(self.hparams.test_period[0])) &
-                (amsr.time.values <= np.datetime64(self.hparams.test_period[1])))[0]
+                (amsr.time.values >= np.datetime64(self.hparams.test_period[0])-self.hparams.days_before) &
+                (amsr.time.values <= np.datetime64(self.hparams.test_period[1])+self.hparams.days_after))[0]
 
             # split into train, val and test and convert to torch tensors
             X_train = torch.from_numpy(X[train_index_pos]).float()
@@ -173,9 +174,9 @@ class SoilDataModule(LightningDataModule):
             Y_test = torch.from_numpy(Y[test_index_pos]).float()
 
             # create datasets
-            self.data_train = SoilDataset(X_train, Y_train)
-            self.data_val = SoilDataset(X_val, Y_val)
-            self.data_test = SoilDataset(X_test, Y_test)
+            self.data_train = SoilDataset(X_train, Y_train, self.hparams.days_before, self.hparams.days_after)
+            self.data_val = SoilDataset(X_val, Y_val, self.hparams.days_before, self.hparams.days_after)
+            self.data_test = SoilDataset(X_test, Y_test, self.hparams.days_before, self.hparams.days_after)
 
 
     def train_dataloader(self) -> DataLoader[Any]:
@@ -245,21 +246,26 @@ class SoilDataModule(LightningDataModule):
 class SoilDataset(Dataset):
     """Dataset class for soil moisture data."""
 
-    def __init__(self, features, targets):
+    def __init__(self, features, targets, days_before, days_after):
         """Initialize the dataset.
 
-        :param df: The dataframe containing the soil moisture data.
-        :param neighborhood: Whether to use the neighborhood data. Defaults to ``False``.
+        :param features: Input data with first dimension corresponding to days.
+        :param targets: Output data with first dimension corresponding to days.
+        :param days_before: Number of days before the target day to include in x.
+        :param days_after: Number of days after the target day to include in x.
         """
         self.features = features
         self.targets = targets
+        self.days_before = days_before
+        self.days_after = days_after
 
     def __len__(self) -> int:
         """Return the length of the dataset.
 
         :return: The length of the dataset.
         """
-        return len(self.targets)
+        # subtract days_before and days_after because we can't use those days as targets
+        return len(self.targets) - self.days_before - self.days_after
 
     def __getitem__(self, idx: int) -> Dict[str, Any]:
         """Return the item at the given index.
@@ -267,8 +273,9 @@ class SoilDataset(Dataset):
         :param idx: The index of the item to return.
         :return: The item at the given index.
         """
-        x = self.features[idx]
-        y = self.targets[idx]
+        # get the input and output data for the given index (w.r.t the days before and after)
+        x = self.features[idx:idx+self.days_before+self.days_after+1]
+        y = self.targets[idx+self.days_before]
         return x, y
 
 if __name__ == "__main__":

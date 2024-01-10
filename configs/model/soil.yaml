@@ -15,7 +15,9 @@ scheduler:
 
 net:
   _target_: src.models.components.conv_net.ConvNet
-  in_channels: 2
+  data_days_before: ${data.days_before}
+  data_days_after: ${data.days_after}
+  data_features: ${data.features}
   h_in: 70
   w_in: 140
   kernel_size1: 5
